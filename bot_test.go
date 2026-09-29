@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-telegram/bot/models"
+	"github.com/ad3n/telegram-bot/models"
 )
 
 type serverMock struct {

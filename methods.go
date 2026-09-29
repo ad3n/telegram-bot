@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/go-telegram/bot/models"
+	"github.com/ad3n/telegram-bot/models"
 )
 
 // SetWebhook https://core.telegram.org/bots/api#setwebhook

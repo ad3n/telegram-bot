@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/go-telegram/bot/models"
+	"github.com/ad3n/telegram-bot/models"
 )
 
 var (

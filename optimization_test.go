@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/go-telegram/bot/models"
+	"github.com/ad3n/telegram-bot/models"
 )
 
 func referenceEscapeMarkdown(s string, preserveEscapes bool) string {

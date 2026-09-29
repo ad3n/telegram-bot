@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"sync"
 
-	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	"github.com/ad3n/telegram-bot"
+	"github.com/ad3n/telegram-bot/models"
 )
 
 func main() {

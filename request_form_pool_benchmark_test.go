@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-telegram/bot/models"
+	"github.com/ad3n/telegram-bot/models"
 )
 
 func BenchmarkRequestFormParallel(b *testing.B) {
