@@ -1,3 +1,3 @@
 module github.com/go-telegram/bot
 
-go 1.18
+go 1.26.0

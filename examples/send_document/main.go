@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
-
-// Send any text message to the bot after the bot has been started
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -22,9 +21,8 @@ func main() {
 	}
 
 	b, err := bot.New(os.Getenv("EXAMPLE_TELEGRAM_BOT_TOKEN"), opts...)
-	if nil != err {
-		// panics for the sake of simplicity.
-		// you should handle this error properly in your code.
+	if err != nil {
+
 		panic(err)
 	}
 
@@ -44,5 +42,7 @@ func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		Caption:  "Document",
 	}
 
-	b.SendDocument(ctx, params)
+	if _, err := b.SendDocument(ctx, params); err != nil {
+		log.Printf("SendDocument: %v", err)
+	}
 }

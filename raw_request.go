@@ -14,24 +14,19 @@ import (
 	"strings"
 )
 
-type apiResponse struct {
-	OK          bool            `json:"ok"`
-	Result      json.RawMessage `json:"result,omitempty"`
-	Description string          `json:"description,omitempty"`
-	ErrorCode   int             `json:"error_code,omitempty"`
-	Parameters  struct {
-		RetryAfter      int `json:"retry_after,omitempty"`
-		MigrateToChatID int `json:"migrate_to_chat_id,omitempty"`
-	} `json:"parameters,omitempty"`
-}
+type (
+	apiResponse struct {
+		OK          bool            `json:"ok"`
+		Result      json.RawMessage `json:"result,omitempty"`
+		Description string          `json:"description,omitempty"`
+		ErrorCode   int             `json:"error_code,omitempty"`
+		Parameters  struct {
+			RetryAfter      int `json:"retry_after,omitempty"`
+			MigrateToChatID int `json:"migrate_to_chat_id,omitempty"`
+		} `json:"parameters,omitempty"`
+	}
+)
 
-// rawRequest materialises the multipart body up front so net/http can set
-// Request.ContentLength and Request.GetBody. Without them http2.Transport cannot
-// replay a POST after the server sends GOAWAY, and every call on a draining
-// connection fails. The price is that an upload is held in memory for the
-// duration of the request. A method with no fields is sent without a body and
-// without a Content-Type, as local telegram-bot-api servers reject an empty
-// multipart body.
 func (b *Bot) rawRequest(ctx context.Context, method string, params any, dest any) error {
 	var bodyBuf bytes.Buffer
 	form := multipart.NewWriter(&bodyBuf)
@@ -51,6 +46,7 @@ func (b *Bot) rawRequest(ctx context.Context, method string, params any, dest an
 		if errFormClose := form.Close(); errFormClose != nil {
 			return fmt.Errorf("error form close for method %s, %w", method, errFormClose)
 		}
+
 		requestBody = bytes.NewReader(bodyBuf.Bytes())
 		contentType = form.FormDataContentType()
 	}
@@ -59,6 +55,7 @@ func (b *Bot) rawRequest(ctx context.Context, method string, params any, dest an
 	if b.testEnvironment {
 		u += "test/"
 	}
+
 	u += method
 
 	if b.isDebug && strings.ToLower(method) != "getupdates" {
@@ -77,13 +74,13 @@ func (b *Bot) rawRequest(ctx context.Context, method string, params any, dest an
 
 	resp, errDo := b.client.Do(req)
 	if errDo != nil {
-		var netErr *url.Error
-		if errors.As(errDo, &netErr) {
-			netErr.URL = strings.Replace(netErr.URL, b.token, "***", -1)
+		if netErr, ok := errors.AsType[*url.Error](errDo); ok {
+			netErr.URL = strings.ReplaceAll(netErr.URL, b.token, "***")
 		}
 
 		return fmt.Errorf("error do request for method %s, %w", method, errDo)
 	}
+
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
 			b.errorsHandler(fmt.Errorf("failed to close response body: %w", err))
@@ -115,6 +112,7 @@ func (b *Bot) rawRequest(ctx context.Context, method string, params any, dest an
 
 				return err
 			}
+
 			return fmt.Errorf("%w, %s", ErrorBadRequest, r.Description)
 		case http.StatusUnauthorized:
 			return fmt.Errorf("%w, %s", ErrorUnauthorized, r.Description)

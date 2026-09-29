@@ -7,16 +7,12 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-type HandlerType int
-
 const (
 	HandlerTypeMessageText HandlerType = iota
 	HandlerTypeCallbackQueryData
 	HandlerTypeCallbackQueryGameShortName
 	HandlerTypePhotoCaption
 )
-
-type MatchType int
 
 const (
 	MatchTypeExact MatchType = iota
@@ -29,20 +25,29 @@ const (
 	matchTypeFunc
 )
 
-type handler struct {
-	id          string
-	handlerType HandlerType
-	matchType   MatchType
-	handler     HandlerFunc
+type (
+	HandlerType int
 
-	pattern   string
-	re        *regexp.Regexp
-	matchFunc MatchFunc
-}
+	MatchType int
+
+	handler struct {
+		handler     HandlerFunc
+		re          *regexp.Regexp
+		matchFunc   MatchFunc
+		id          string
+		pattern     string
+		handlerType HandlerType
+		matchType   MatchType
+	}
+)
 
 func (h handler) match(update *models.Update) bool {
 	if h.matchType == matchTypeFunc {
-		return h.matchFunc(update)
+		return h.matchFunc != nil && h.matchFunc(update)
+	}
+
+	if update == nil {
+		return false
 	}
 
 	var data string
@@ -53,22 +58,26 @@ func (h handler) match(update *models.Update) bool {
 		if update.Message == nil {
 			return false
 		}
+
 		data = update.Message.Text
 		entities = update.Message.Entities
 	case HandlerTypeCallbackQueryData:
 		if update.CallbackQuery == nil {
 			return false
 		}
+
 		data = update.CallbackQuery.Data
 	case HandlerTypeCallbackQueryGameShortName:
 		if update.CallbackQuery == nil {
 			return false
 		}
+
 		data = update.CallbackQuery.GameShortName
 	case HandlerTypePhotoCaption:
 		if update.Message == nil {
 			return false
 		}
+
 		data = update.Message.Caption
 		entities = update.Message.CaptionEntities
 	}
@@ -76,33 +85,39 @@ func (h handler) match(update *models.Update) bool {
 	if h.matchType == MatchTypeExact {
 		return data == h.pattern
 	}
+
 	if h.matchType == MatchTypePrefix {
 		return strings.HasPrefix(data, h.pattern)
 	}
+
 	if h.matchType == MatchTypeContains {
 		return strings.Contains(data, h.pattern)
 	}
+
 	if h.matchType == MatchTypeCommand {
 		for _, e := range entities {
-			if e.Type == models.MessageEntityTypeBotCommand {
+			if e.Type == models.MessageEntityTypeBotCommand && e.Offset >= 0 && e.Offset < len(data) && e.Length > 0 && e.Length <= len(data)-e.Offset {
 				if data[e.Offset+1:e.Offset+e.Length] == h.pattern {
 					return true
 				}
 			}
 		}
 	}
+
 	if h.matchType == MatchTypeCommandStartOnly {
 		for _, e := range entities {
-			if e.Type == models.MessageEntityTypeBotCommand {
+			if e.Type == models.MessageEntityTypeBotCommand && e.Offset >= 0 && e.Offset < len(data) && e.Length > 0 && e.Length <= len(data)-e.Offset {
 				if e.Offset == 0 && data[e.Offset+1:e.Offset+e.Length] == h.pattern {
 					return true
 				}
 			}
 		}
 	}
+
 	if h.matchType == matchTypeRegexp {
-		return h.re.Match([]byte(data))
+		return h.re != nil && h.re.MatchString(data)
 	}
+
 	return false
 }
 
@@ -168,7 +183,10 @@ func (b *Bot) UnregisterHandler(id string) {
 
 	for i, h := range b.handlers {
 		if h.id == id {
-			b.handlers = append(b.handlers[:i], b.handlers[i+1:]...)
+			copy(b.handlers[i:], b.handlers[i+1:])
+			last := len(b.handlers) - 1
+			b.handlers[last] = handler{}
+			b.handlers = b.handlers[:last]
 			return
 		}
 	}

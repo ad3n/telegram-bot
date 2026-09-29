@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
 	"os/signal"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
-
-// Use inline mode @botname some_text
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -20,9 +19,8 @@ func main() {
 	}
 
 	b, err := bot.New(os.Getenv("EXAMPLE_TELEGRAM_BOT_TOKEN"), opts...)
-	if nil != err {
-		// panics for the sake of simplicity.
-		// you should handle this error properly in your code.
+	if err != nil {
+
 		panic(err)
 	}
 
@@ -40,8 +38,10 @@ func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		&models.InlineQueryResultArticle{ID: "3", Title: "Foo 3", InputMessageContent: &models.InputTextMessageContent{MessageText: "foo 3"}},
 	}
 
-	b.AnswerInlineQuery(ctx, &bot.AnswerInlineQueryParams{
+	if _, err := b.AnswerInlineQuery(ctx, &bot.AnswerInlineQueryParams{
 		InlineQueryID: update.InlineQuery.ID,
 		Results:       results,
-	})
+	}); err != nil {
+		log.Printf("AnswerInlineQuery: %v", err)
+	}
 }

@@ -7,66 +7,122 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
-
-// escape special symbols in text for MarkdownV2 parse mode
-
-var shouldBeEscaped = "_*[]()~`>#+-=|{}.!"
-
-// EscapeMarkdown escapes special symbols for Telegram MarkdownV2 syntax
-func EscapeMarkdown(s string) string {
-	var result []rune
-	for _, r := range s {
-		if strings.ContainsRune(shouldBeEscaped, r) {
-			result = append(result, '\\')
-		}
-		result = append(result, r)
-	}
-	return string(result)
-}
-
-// EscapeMarkdownUnescaped escapes unescaped special symbols for Telegram Markdown v2 syntax
-func EscapeMarkdownUnescaped(s string) string {
-	var result []rune
-	var escaped bool
-	for _, r := range s {
-		if r == '\\' {
-			escaped = !escaped
-			result = append(result, r)
-			continue
-		}
-		if strings.ContainsRune(shouldBeEscaped, r) && !escaped {
-			result = append(result, '\\')
-		}
-		escaped = false
-		result = append(result, r)
-	}
-	return string(result)
-}
-
-// log functions
-
-// random string generator
-
-const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 const (
-	letterIdxBits = 6                    // 6 bits to represent a letter index
-	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
-	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+	letterBytes   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	letterIdxBits = 6
+	letterIdxMask = 1<<letterIdxBits - 1
+	letterIdxMax  = 63 / letterIdxBits
 )
 
-var randSrc = rand.NewSource(time.Now().UnixNano())
-var randSrcMx sync.Mutex
+var (
+	randSrc = rand.NewSource(time.Now().UnixNano())
 
-// RandomString returns random a-zA-Z string with n length
+	randSrcMx sync.Mutex
+)
+
+type (
+	WebAppUser struct {
+		ID                    int64  `json:"id"`
+		IsBot                 bool   `json:"is_bot"`
+		FirstName             string `json:"first_name"`
+		LastName              string `json:"last_name"`
+		Username              string `json:"username"`
+		LanguageCode          string `json:"language_code"`
+		IsPremium             bool   `json:"is_premium"`
+		AddedToAttachmentMenu bool   `json:"added_to_attachment_menu"`
+		AllowsWriteToPM       bool   `json:"allows_write_to_pm"`
+		PhotoURL              string `json:"photo_url"`
+	}
+)
+
+func EscapeMarkdown(s string) string {
+	return escapeMarkdown(s, false)
+}
+
+func EscapeMarkdownUnescaped(s string) string {
+	return escapeMarkdown(s, true)
+}
+
+func escapeMarkdown(s string, preserveEscapes bool) string {
+	size := 0
+	escaped := false
+	changed := false
+	for i, r := range s {
+		size += utf8.RuneLen(r)
+		if r == utf8.RuneError && s[i] >= utf8.RuneSelf {
+			_, width := utf8.DecodeRuneInString(s[i:])
+			changed = changed || width == 1
+		}
+
+		if preserveEscapes && r == '\\' {
+			escaped = !escaped
+			continue
+		}
+
+		if !escaped && markdownNeedsEscape(r) {
+			size++
+			changed = true
+		}
+
+		escaped = false
+	}
+
+	if !changed {
+		return s
+	}
+
+	var result strings.Builder
+	result.Grow(size)
+	escaped = false
+	start := 0
+	for i, r := range s {
+		if preserveEscapes && r == '\\' {
+			escaped = !escaped
+			continue
+		}
+
+		if !escaped && markdownNeedsEscape(r) {
+			result.WriteString(s[start:i])
+			result.WriteByte('\\')
+			start = i
+		}
+
+		if r == utf8.RuneError {
+			_, width := utf8.DecodeRuneInString(s[i:])
+			if width == 1 {
+				result.WriteString(s[start:i])
+				result.WriteRune(utf8.RuneError)
+				start = i + 1
+			}
+		}
+
+		escaped = false
+	}
+
+	result.WriteString(s[start:])
+
+	return result.String()
+}
+
+func markdownNeedsEscape(r rune) bool {
+	switch r {
+	case '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!':
+		return true
+	}
+
+	return false
+}
+
 func RandomString(n int) string {
 	b := make([]byte, n)
-	// A randSrc.Int63() generates 63 random bits, enough for letterIdxMax characters!
+
 	randSrcMx.Lock()
 	ch := randSrc.Int63()
 	randSrcMx.Unlock()
@@ -76,10 +132,12 @@ func RandomString(n int) string {
 			ch, remain = randSrc.Int63(), letterIdxMax
 			randSrcMx.Unlock()
 		}
+
 		if idx := int(ch & letterIdxMask); idx < len(letterBytes) {
 			b[i] = letterBytes[idx]
 			i--
 		}
+
 		ch >>= letterIdxBits
 		remain--
 	}
@@ -87,21 +145,6 @@ func RandomString(n int) string {
 	return string(b)
 }
 
-// WebAppUser represents user model from webapp request
-type WebAppUser struct {
-	ID                    int64  `json:"id"`
-	IsBot                 bool   `json:"is_bot"`
-	FirstName             string `json:"first_name"`
-	LastName              string `json:"last_name"`
-	Username              string `json:"username"`
-	LanguageCode          string `json:"language_code"`
-	IsPremium             bool   `json:"is_premium"`
-	AddedToAttachmentMenu bool   `json:"added_to_attachment_menu"`
-	AllowsWriteToPM       bool   `json:"allows_write_to_pm"`
-	PhotoURL              string `json:"photo_url"`
-}
-
-// ValidateWebappRequest validates request from webapp
 func ValidateWebappRequest(values url.Values, token string) (user *WebAppUser, ok bool) {
 	h := values.Get("hash")
 	values.Del("hash")
@@ -121,9 +164,7 @@ func ValidateWebappRequest(values url.Values, token string) (user *WebAppUser, o
 		}
 	}
 
-	sort.Slice(vals, func(i, j int) bool {
-		return vals[i] < vals[j]
-	})
+	slices.Sort(vals)
 
 	hmac1 := hmac.New(sha256.New, []byte("WebAppData"))
 	hmac1.Write([]byte(token))

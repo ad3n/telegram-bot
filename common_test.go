@@ -18,11 +18,12 @@ func TestEscapeMarkdownUnescaped(t *testing.T) {
 
 func TestRandomString(t *testing.T) {
 	res := map[string]struct{}{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		r := RandomString(10)
 		if _, ok := res[r]; ok {
 			t.Fatalf("value already exists")
 		}
+
 		res[r] = struct{}{}
 	}
 

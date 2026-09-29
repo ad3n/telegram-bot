@@ -8,8 +8,6 @@ import (
 
 const unknownType = "type_added_in_future_api"
 
-// Telegram adds new variants with each Bot API release. A polymorphic model must keep
-// the unknown discriminator and decode without error, otherwise the whole update is lost.
 func TestPolymorphicUnmarshal_UnknownDiscriminator(t *testing.T) {
 	var (
 		chatMember     ChatMember
@@ -55,19 +53,20 @@ func TestPolymorphicUnmarshal_UnknownDiscriminator(t *testing.T) {
 			if unmarshalErr := json.Unmarshal([]byte(c.src), c.dst); unmarshalErr != nil {
 				t.Fatalf("unknown discriminator must not fail: %v", unmarshalErr)
 			}
+
 			if got := c.typ(); got != unknownType {
 				t.Fatalf("discriminator lost: got %q", got)
 			}
+
 			assertNoVariantSet(t, c.dst)
 		})
 	}
 }
 
-// assertNoVariantSet checks every variant pointer of a polymorphic struct stays nil.
 func assertNoVariantSet(t *testing.T, dst any) {
 	t.Helper()
 	v := reflect.ValueOf(dst).Elem()
-	for i := 0; i < v.NumField(); i++ {
+	for i := range v.NumField() {
 		f := v.Field(i)
 		if f.Kind() == reflect.Pointer && !f.IsNil() {
 			t.Fatalf("variant %s set for unknown type", v.Type().Field(i).Name)
@@ -75,9 +74,6 @@ func assertNoVariantSet(t *testing.T, dst any) {
 	}
 }
 
-// A value decoded from a newer Bot API release must survive a round trip. Anyone who
-// logs, persists or queues updates as JSON, or echoes a value back into a request,
-// would otherwise break on the day Telegram ships a new variant.
 func TestPolymorphicMarshal_UnknownDiscriminator(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -103,6 +99,7 @@ func TestPolymorphicMarshal_UnknownDiscriminator(t *testing.T) {
 			case "ChatBoostSource":
 				field = "source"
 			}
+
 			src := `{"` + field + `":"` + unknownType + `"}`
 
 			if unmarshalErr := json.Unmarshal([]byte(src), c.value); unmarshalErr != nil {
@@ -113,6 +110,7 @@ func TestPolymorphicMarshal_UnknownDiscriminator(t *testing.T) {
 			if marshalErr != nil {
 				t.Fatalf("unknown discriminator must not fail to encode: %v", marshalErr)
 			}
+
 			if string(out) != src {
 				t.Fatalf("round-trip mismatch:\n got %s\nwant %s", out, src)
 			}
@@ -120,10 +118,8 @@ func TestPolymorphicMarshal_UnknownDiscriminator(t *testing.T) {
 	}
 }
 
-// An empty discriminator is an unset value, not a variant from a future release:
-// there is no payload to encode, so it stays an error.
 func TestPolymorphicMarshal_EmptyDiscriminator(t *testing.T) {
-	// RichText is absent on purpose: an empty Type is its plain-string form.
+
 	cases := []struct {
 		name  string
 		value json.Marshaler
@@ -147,8 +143,6 @@ func TestPolymorphicMarshal_EmptyDiscriminator(t *testing.T) {
 	}
 }
 
-// ReactionTypePaid is a known variant since Bot API 7.6, but MarshalJSON never had a
-// case for it, so a paid reaction read from an update could not be sent back.
 func TestReactionType_PaidRoundTrip(t *testing.T) {
 	src := `{"type":"paid"}`
 
@@ -156,6 +150,7 @@ func TestReactionType_PaidRoundTrip(t *testing.T) {
 	if unmarshalErr := json.Unmarshal([]byte(src), rt); unmarshalErr != nil {
 		t.Fatalf("decode: %v", unmarshalErr)
 	}
+
 	if rt.ReactionTypePaid == nil {
 		t.Fatal("paid variant not populated")
 	}
@@ -164,13 +159,12 @@ func TestReactionType_PaidRoundTrip(t *testing.T) {
 	if marshalErr != nil {
 		t.Fatalf("encode: %v", marshalErr)
 	}
+
 	if string(out) != src {
 		t.Fatalf("round-trip mismatch:\n got %s\nwant %s", out, src)
 	}
 }
 
-// An empty Type is RichText's plain-string form, so a tagged object without a "type"
-// must not decode into it: that would silently alias a malformed value to "".
 func TestRichText_ObjectWithoutType(t *testing.T) {
 	var rt RichText
 	if unmarshalErr := json.Unmarshal([]byte(`{"text":"hi"}`), &rt); unmarshalErr == nil {
@@ -178,8 +172,6 @@ func TestRichText_ObjectWithoutType(t *testing.T) {
 	}
 }
 
-// A Type set without its variant pointer is a caller mistake. It must come back as an
-// error from MarshalJSON, never as a nil-pointer panic inside encoding/json.
 func TestReactionType_MarshalNilVariant(t *testing.T) {
 	for _, typ := range []ReactionTypeType{ReactionTypeTypeEmoji, ReactionTypeTypeCustomEmoji, ReactionTypeTypePaid} {
 		t.Run(string(typ), func(t *testing.T) {
@@ -190,9 +182,6 @@ func TestReactionType_MarshalNilVariant(t *testing.T) {
 	}
 }
 
-// A tagged object without its discriminator is malformed, not a variant from a future
-// release. Decoding must reject it, the same way MarshalJSON rejects an empty Type,
-// so a value that decodes can always be encoded again.
 func TestPolymorphicUnmarshal_EmptyDiscriminator(t *testing.T) {
 	cases := []struct {
 		name string

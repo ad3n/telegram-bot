@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"log"
 	"os"
 	"os/signal"
 
@@ -11,7 +12,9 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// Send any text message to the bot after the bot has been started
+var (
+	images embed.FS
+)
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -22,17 +25,13 @@ func main() {
 	}
 
 	b, err := bot.New(os.Getenv("EXAMPLE_TELEGRAM_BOT_TOKEN"), opts...)
-	if nil != err {
-		// panics for the sake of simplicity.
-		// you should handle this error properly in your code.
+	if err != nil {
+
 		panic(err)
 	}
 
 	b.Start(ctx)
 }
-
-//go:embed images
-var images embed.FS
 
 func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	fileDataFacebook, _ := images.ReadFile("images/facebook.png")
@@ -64,5 +63,7 @@ func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		},
 	}
 
-	b.SendMediaGroup(ctx, params)
+	if _, err := b.SendMediaGroup(ctx, params); err != nil {
+		log.Printf("SendMediaGroup: %v", err)
+	}
 }

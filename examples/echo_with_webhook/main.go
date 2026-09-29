@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -9,8 +10,6 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
-
-// Send any text message to the bot after the bot has been started
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -21,29 +20,32 @@ func main() {
 	}
 
 	b, err := bot.New(os.Getenv("EXAMPLE_TELEGRAM_BOT_TOKEN"), opts...)
-	if nil != err {
-		// panics for the sake of simplicity.
-		// you should handle this error properly in your code.
+	if err != nil {
+
 		panic(err)
 	}
 
-	b.SetWebhook(ctx, &bot.SetWebhookParams{
+	if _, err := b.SetWebhook(ctx, &bot.SetWebhookParams{
 		URL: "https://example.com/webhook",
-	})
+	}); err != nil {
+		log.Printf("SetWebhook: %v", err)
+	}
 
 	go func() {
-		http.ListenAndServe(":2000", b.WebhookHandler())
+		if err := http.ListenAndServe(":2000", b.WebhookHandler()); err != nil {
+			log.Printf("ListenAndServe: %v", err)
+		}
 	}()
 
-	// Use StartWebhook instead of Start
 	b.StartWebhook(ctx)
 
-	// call methods.DeleteWebhook if needed
 }
 
 func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	b.SendMessage(ctx, &bot.SendMessageParams{
+	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
 		Text:   update.Message.Text,
-	})
+	}); err != nil {
+		log.Printf("SendMessage: %v", err)
+	}
 }

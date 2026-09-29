@@ -56,7 +56,7 @@ To run the examples, set the `EXAMPLE_TELEGRAM_BOT_TOKEN` environment variable t
 
 ## Getting started
 
-Go version: **1.18**
+Go version: **1.26 or newer**
 
 Install the dependencies:
 

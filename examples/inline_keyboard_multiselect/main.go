@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 
@@ -10,9 +11,9 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// Send /select command to the bot to see the example in action.
-
-var currentOptions = []bool{false, false, false}
+var (
+	currentOptions = []bool{false, false, false}
+)
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -24,9 +25,8 @@ func main() {
 	}
 
 	b, err := bot.New(os.Getenv("EXAMPLE_TELEGRAM_BOT_TOKEN"), opts...)
-	if nil != err {
-		// panics for the sake of simplicity.
-		// you should handle this error properly in your code.
+	if err != nil {
+
 		panic(err)
 	}
 
@@ -34,14 +34,13 @@ func main() {
 }
 
 func callbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	// answering callback query first to let Telegram know that we received the callback query,
-	// and we're handling it. Otherwise, Telegram might retry sending the update repetitively
-	// as it thinks the callback query doesn't reach to our application. learn more by
-	// reading the footnote of the https://core.telegram.org/bots/api#callbackquery type.
-	b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+
+	if _, err := b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: update.CallbackQuery.ID,
 		ShowAlert:       false,
-	})
+	}); err != nil {
+		log.Printf("AnswerCallbackQuery: %v", err)
+	}
 
 	switch update.CallbackQuery.Data {
 	case "btn_opt1":
@@ -51,22 +50,30 @@ func callbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	case "btn_opt3":
 		currentOptions[2] = !currentOptions[2]
 	case "btn_select":
-		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+		if _, err := b.DeleteMessage(ctx, &bot.DeleteMessageParams{
 			ChatID:    update.CallbackQuery.Message.Message.Chat.ID,
 			MessageID: update.CallbackQuery.Message.Message.ID,
-		})
-		b.SendMessage(ctx, &bot.SendMessageParams{
+		}); err != nil {
+			log.Printf("DeleteMessage: %v", err)
+		}
+
+		if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.CallbackQuery.Message.Message.Chat.ID,
 			Text:   fmt.Sprintf("Selected options: %v", currentOptions),
-		})
+		}); err != nil {
+			log.Printf("SendMessage: %v", err)
+		}
+
 		return
 	}
 
-	b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+	if _, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
 		ChatID:      update.CallbackQuery.Message.Message.Chat.ID,
 		MessageID:   update.CallbackQuery.Message.Message.ID,
 		ReplyMarkup: buildKeyboard(),
-	})
+	}); err != nil {
+		log.Printf("EditMessageReplyMarkup: %v", err)
+	}
 }
 
 func buildKeyboard() models.ReplyMarkup {
@@ -94,9 +101,11 @@ func buttonText(text string, opt bool) string {
 }
 
 func commandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	b.SendMessage(ctx, &bot.SendMessageParams{
+	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      update.Message.Chat.ID,
 		Text:        "Select multiple options",
 		ReplyMarkup: buildKeyboard(),
-	})
+	}); err != nil {
+		log.Printf("SendMessage: %v", err)
+	}
 }

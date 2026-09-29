@@ -20,49 +20,53 @@ const (
 	defaultWorkers          = 1
 )
 
-type HttpClient interface {
-	Do(*http.Request) (*http.Response, error)
-}
+type (
+	HttpClient interface {
+		Do(*http.Request) (*http.Response, error)
+	}
 
-type ErrorsHandler func(err error)
-type DebugHandler func(format string, args ...any)
-type Middleware func(next HandlerFunc) HandlerFunc
-type HandlerFunc func(ctx context.Context, bot *Bot, update *models.Update)
-type MatchFunc func(update *models.Update) bool
+	ErrorsHandler func(err error)
 
-// Bot represents Telegram Bot main object
-type Bot struct {
-	lastUpdateID int64
+	DebugHandler func(format string, args ...any)
 
-	url                string
-	token              string
-	pollTimeout        time.Duration
-	skipGetMe          bool
-	webhookSecretToken string
-	testEnvironment    bool
-	workers            int
-	notAsyncHandlers   bool
+	Middleware func(next HandlerFunc) HandlerFunc
 
-	defaultHandlerFunc HandlerFunc
+	HandlerFunc func(ctx context.Context, bot *Bot, update *models.Update)
 
-	errorsHandler ErrorsHandler
-	debugHandler  DebugHandler
+	MatchFunc func(update *models.Update) bool
 
-	middlewares []Middleware
+	Bot struct {
+		lastUpdateID int64
 
-	handlersMx sync.RWMutex
-	handlers   []handler
+		url                string
+		token              string
+		pollTimeout        time.Duration
+		skipGetMe          bool
+		webhookSecretToken string
+		testEnvironment    bool
+		workers            int
+		notAsyncHandlers   bool
 
-	client           HttpClient
-	isDebug          bool
-	checkInitTimeout time.Duration
+		defaultHandlerFunc HandlerFunc
 
-	allowedUpdates AllowedUpdates
+		errorsHandler ErrorsHandler
+		debugHandler  DebugHandler
 
-	updates chan *models.Update
-}
+		middlewares []Middleware
 
-// New creates new Bot instance
+		handlersMx sync.RWMutex
+		handlers   []handler
+
+		client           HttpClient
+		isDebug          bool
+		checkInitTimeout time.Duration
+
+		allowedUpdates AllowedUpdates
+
+		updates chan *models.Update
+	}
+)
+
 func New(token string, options ...Option) (*Bot, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("empty token")
@@ -101,35 +105,30 @@ func New(token string, options ...Option) (*Bot, error) {
 	return b, nil
 }
 
-// ID returns the bot user id from the token prefix ("<id>:<secret>").
 func (b *Bot) ID() int64 {
 	i, _ := strconv.ParseInt(strings.Split(b.token, ":")[0], 10, 64)
 	return i
 }
 
-// SetToken sets the bot token
 func (b *Bot) SetToken(token string) {
 	b.token = token
 }
 
-// Token returns the bot token
 func (b *Bot) Token() string {
 	return b.token
 }
 
-// StartWebhook starts the Bot with webhook mode
 func (b *Bot) StartWebhook(ctx context.Context) {
 	wg := sync.WaitGroup{}
 
 	wg.Add(b.workers)
-	for i := 0; i < b.workers; i++ {
+	for range b.workers {
 		go b.waitUpdates(ctx, &wg)
 	}
 
 	wg.Wait()
 }
 
-// Start the bot
 func (b *Bot) Start(ctx context.Context) {
 	wg := sync.WaitGroup{}
 
@@ -137,7 +136,7 @@ func (b *Bot) Start(ctx context.Context) {
 	go b.getUpdates(ctx, &wg)
 
 	wg.Add(b.workers)
-	for i := 0; i < b.workers; i++ {
+	for range b.workers {
 		go b.waitUpdates(ctx, &wg)
 	}
 
@@ -160,19 +159,14 @@ func (b *Bot) error(format string, args ...any) {
 	b.errorsHandler(fmt.Errorf(format, args...))
 }
 
-// True and False returns the pointer to bool
 func True() *bool {
-	b := true
-	return &b
+	return new(true)
 }
 
-// False and True returns the pointer to bool
 func False() *bool {
-	b := false
-	return &b
+	return new(false)
 }
 
-// FileDownloadLink returns the file download link
 func (b *Bot) FileDownloadLink(f *models.File) string {
 	return fmt.Sprintf("%s/file/bot%s/%s", b.url, b.token, f.FilePath)
 }
