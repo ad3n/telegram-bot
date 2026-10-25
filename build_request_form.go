@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/ad3n/telegram-bot/models"
 )
@@ -16,9 +17,19 @@ var (
 	customMarshalInterface = reflect.TypeFor[customMarshal]()
 
 	inputMediaInterface = reflect.TypeFor[inputMedia]()
+
+	requestFormFields sync.Map
 )
 
 type (
+	requestFormField struct {
+		name          string
+		index         int
+		omitEmpty     bool
+		customMarshal bool
+		inputMedia    bool
+	}
+
 	inputMedia interface {
 		MarshalInputMedia() ([]byte, error)
 		Attachment() io.Reader
@@ -100,6 +111,33 @@ func (f *requestForm) addFieldPart(fieldName string, value io.Reader) error {
 	return errCopy
 }
 
+func loadRequestFormFields(t reflect.Type) []requestFormField {
+	if fields, ok := requestFormFields.Load(t); ok {
+		return fields.([]requestFormField)
+	}
+
+	fields := make([]requestFormField, 0, t.NumField())
+	for i := range t.NumField() {
+		field := t.Field(i)
+		tag := field.Tag.Get("json")
+		if tag == "-" || tag == "" {
+			continue
+		}
+
+		name, _, _ := strings.Cut(tag, ",")
+		fields = append(fields, requestFormField{
+			name:          name,
+			index:         i,
+			omitEmpty:     strings.Contains(tag, ",omitempty"),
+			customMarshal: field.Type.Implements(customMarshalInterface),
+			inputMedia:    field.Type.Implements(inputMediaInterface),
+		})
+	}
+
+	cached, _ := requestFormFields.LoadOrStore(t, fields)
+	return cached.([]requestFormField)
+}
+
 func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 	form := acquireRequestForm(w)
 	defer releaseRequestForm(form)
@@ -108,21 +146,15 @@ func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 
 	var fieldsCount int
 
-	for i := range v.NumField() {
-		jsonTag := v.Type().Field(i).Tag.Get("json")
-		if jsonTag == "-" || jsonTag == "" {
+	for _, field := range loadRequestFormFields(v.Type()) {
+		value := v.Field(field.index)
+		fieldName := field.name
+		if field.omitEmpty && value.IsZero() {
 			continue
 		}
 
-		fieldName, _, _ := strings.Cut(jsonTag, ",")
-		omitempty := strings.Contains(jsonTag, ",omitempty")
-
-		if omitempty && v.Field(i).IsZero() {
-			continue
-		}
-
-		if v.Field(i).Type().Implements(customMarshalInterface) {
-			err := addFormFieldCustomMarshal(form, fieldName, v.Field(i).Interface().(customMarshal))
+		if field.customMarshal {
+			err := addFormFieldCustomMarshal(form, fieldName, value.Interface().(customMarshal))
 			if err != nil {
 				return 0, err
 			}
@@ -131,8 +163,8 @@ func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 			continue
 		}
 
-		if v.Field(i).Type().Implements(inputMediaInterface) {
-			err := addFormFieldInputMedia(form, fieldName, v.Field(i).Interface().(inputMedia))
+		if field.inputMedia {
+			err := addFormFieldInputMedia(form, fieldName, value.Interface().(inputMedia))
 			if err != nil {
 				return 0, err
 			}
@@ -141,9 +173,9 @@ func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 			continue
 		}
 
-		if v.Field(i).Kind() == reflect.Interface && !v.Field(i).IsNil() {
-			if v.Field(i).Elem().Type().Implements(customMarshalInterface) {
-				err := addFormFieldCustomMarshal(form, fieldName, v.Field(i).Interface().(customMarshal))
+		if value.Kind() == reflect.Interface && !value.IsNil() {
+			if value.Elem().Type().Implements(customMarshalInterface) {
+				err := addFormFieldCustomMarshal(form, fieldName, value.Interface().(customMarshal))
 				if err != nil {
 					return 0, err
 				}
@@ -152,8 +184,8 @@ func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 				continue
 			}
 
-			if v.Field(i).Elem().Type().Implements(inputMediaInterface) {
-				err := addFormFieldInputMedia(form, fieldName, v.Field(i).Interface().(inputMedia))
+			if value.Elem().Type().Implements(inputMediaInterface) {
+				err := addFormFieldInputMedia(form, fieldName, value.Interface().(inputMedia))
 				if err != nil {
 					return 0, err
 				}
@@ -165,7 +197,7 @@ func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 
 		var err error
 
-		switch vv := v.Field(i).Interface().(type) {
+		switch vv := value.Interface().(type) {
 		case string:
 			err = addFormFieldString(form, fieldName, vv)
 		case *models.InputFileUpload:
@@ -179,19 +211,9 @@ func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 		case *models.InputMediaLivePhoto:
 			err = addFormFieldInputMedia(form, fieldName, vv)
 		case []models.InputMedia:
-			ss := make([]inputMedia, len(vv))
-			for i, m := range vv {
-				ss[i] = m
-			}
-
-			err = addFormFieldInputMediaSlice(form, fieldName, ss)
+			err = addFormFieldInputMediaSlice(form, fieldName, vv)
 		case []models.InputPaidMedia:
-			ss := make([]inputMedia, len(vv))
-			for i, m := range vv {
-				ss[i] = m
-			}
-
-			err = addFormFieldInputMediaSlice(form, fieldName, ss)
+			err = addFormFieldInputMediaSlice(form, fieldName, vv)
 		case []models.InlineQueryResult:
 			err = addFormFieldInlineQueryResultSlice(form, fieldName, vv)
 		case []models.InputSticker:
@@ -201,7 +223,7 @@ func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 		case *models.InputRichMessage:
 			err = addFormFieldInputRichMessage(form, fieldName, vv)
 		default:
-			err = addFormFieldDefault(form, fieldName, v.Field(i).Interface())
+			err = addFormFieldDefault(form, fieldName, value.Interface())
 		}
 
 		if err != nil {
@@ -335,7 +357,7 @@ func addFormFieldInputMedia(form *requestForm, fieldName string, value inputMedi
 	return form.addFieldPart(fieldName, bytes.NewReader(line))
 }
 
-func addFormFieldInputMediaSlice(form *requestForm, fieldName string, value []inputMedia) error {
+func addFormFieldInputMediaSlice[T inputMedia](form *requestForm, fieldName string, value []T) error {
 	lines := acquireMediaBuffer()
 	defer releaseMediaBuffer(lines)
 
