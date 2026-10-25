@@ -213,6 +213,14 @@ Handler Types:
 - `HandlerTypeCallbackQueryData` - for Update.CallbackQuery.Data field
 - `HandlerTypeCallbackQueryGameShortName` - for Update.CallbackQuery.GameShortName field
 - `HandlerTypePhotoCaption` - for Update.Message.Caption field
+- `HandlerTypeInlineQuery` - for Update.InlineQuery.Query field
+
+Use `RegisterHandlerInlineQuery(handler)` to handle all inline queries, including
+empty queries. It returns a handler ID and accepts optional middlewares, like
+`RegisterHandler`. To filter inline query text, use `RegisterHandler` with
+`HandlerTypeInlineQuery` and `MatchTypeExact`, `MatchTypePrefix`, or
+`MatchTypeContains`, or use `RegisterHandlerRegexp`. Inline queries have no message
+entities, so command match types do not match them.
 
 RegisterHandler returns a handler ID string. You can use it to remove the handler later.
 
@@ -478,7 +486,7 @@ if errors.Is(err, mybot.ErrorConflict) {
 
 ## Other
 
-- `bot.ID() int64` - returns bot ID. Bot ID is a unique identifier for the bot, obtained from the token as first part before `:`. Example: `110201543:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw` - bot ID is `110201543`. If the bot token is invalid, the bot ID will be 0.
+- `bot.ID() int64` - returns bot ID. Bot ID is a unique identifier for the bot, obtained from the token as first part before `:`. Example: `110201543:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw` - bot ID is `110201543`. Returns 0 if the prefix cannot be parsed as an `int64`, including overflow. This method does not validate or authenticate the token.
 - `bot.Token() string` - returns bot token
 - `bot.SetToken()` - set new bot token
 

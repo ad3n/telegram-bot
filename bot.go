@@ -106,7 +106,11 @@ func New(token string, options ...Option) (*Bot, error) {
 }
 
 func (b *Bot) ID() int64 {
-	i, _ := strconv.ParseInt(strings.Split(b.token, ":")[0], 10, 64)
+	i, err := strconv.ParseInt(strings.Split(b.token, ":")[0], 10, 64)
+	if err != nil {
+		return 0
+	}
+
 	return i
 }
 
