@@ -29,6 +29,8 @@ func releaseRequestForm(form *requestForm) {
 
 func (f *requestForm) reset() bool {
 	f.w = nil
+	f.stringReader.Reset("")
+	clear(f.scalarBuffer[:])
 	if len(f.fileParts)+len(f.fieldNames) > maxPooledFormParts {
 		f.fileParts = nil
 		f.fieldNames = nil

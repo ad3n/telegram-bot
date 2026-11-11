@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -50,9 +51,11 @@ type (
 	}
 
 	requestForm struct {
-		w          formWriter
-		fileParts  map[string]io.Reader
-		fieldNames map[string]struct{}
+		w            formWriter
+		fileParts    map[string]io.Reader
+		fieldNames   map[string]struct{}
+		stringReader strings.Reader
+		scalarBuffer [20]byte
 	}
 )
 
@@ -92,23 +95,46 @@ func (f *requestForm) addFilePart(partName, filename string, data io.Reader) err
 	return errCopy
 }
 
-func (f *requestForm) addFieldPart(fieldName string, value io.Reader) error {
+func (f *requestForm) createFieldPart(fieldName string) (io.Writer, error) {
 	if _, ok := f.fieldNames[fieldName]; ok {
-		return fmt.Errorf("duplicate form part name %q", fieldName)
+		return nil, fmt.Errorf("duplicate form part name %q", fieldName)
 	}
 
 	if _, ok := f.fileParts[fieldName]; ok {
-		return fmt.Errorf("duplicate form part name %q", fieldName)
+		return nil, fmt.Errorf("duplicate form part name %q", fieldName)
 	}
 
-	w, errCreateField := f.w.CreateFormField(fieldName)
-	if errCreateField != nil {
-		return errCreateField
+	w, err := f.w.CreateFormField(fieldName)
+	if err != nil {
+		return nil, err
 	}
 
 	f.fieldNames[fieldName] = struct{}{}
-	_, errCopy := io.Copy(w, value)
-	return errCopy
+	return w, nil
+}
+
+func (f *requestForm) addFieldPart(fieldName string, value io.Reader) error {
+	w, err := f.createFieldPart(fieldName)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(w, value)
+	return err
+}
+
+func (f *requestForm) addFieldBytes(fieldName string, value []byte) error {
+	w, err := f.createFieldPart(fieldName)
+	if err != nil {
+		return err
+	}
+
+	n, err := w.Write(value)
+	if err == nil && n != len(value) {
+		return io.ErrShortWrite
+	}
+
+	return err
 }
 
 func loadRequestFormFields(t reflect.Type) []requestFormField {
@@ -347,7 +373,7 @@ func addFormFieldCustomMarshal(form *requestForm, fieldName string, value custom
 		return errEncode
 	}
 
-	return form.addFieldPart(fieldName, bytes.NewReader(line))
+	return form.addFieldBytes(fieldName, line)
 }
 
 func addFormFieldInputMedia(form *requestForm, fieldName string, value inputMedia) error {
@@ -360,7 +386,7 @@ func addFormFieldInputMedia(form *requestForm, fieldName string, value inputMedi
 		return err
 	}
 
-	return form.addFieldPart(fieldName, bytes.NewReader(line))
+	return form.addFieldBytes(fieldName, line)
 }
 
 func addFormFieldInputMediaSlice[T inputMedia](form *requestForm, fieldName string, value []T) error {
@@ -535,15 +561,50 @@ func addFormFieldInputStickerSlice(form *requestForm, fieldName string, value []
 }
 
 func addFormFieldDefault(form *requestForm, fieldName string, value any) error {
+	var scalar []byte
+	switch v := value.(type) {
+	case int:
+		scalar = strconv.AppendInt(form.scalarBuffer[:0], int64(v), 10)
+	case int8:
+		scalar = strconv.AppendInt(form.scalarBuffer[:0], int64(v), 10)
+	case int16:
+		scalar = strconv.AppendInt(form.scalarBuffer[:0], int64(v), 10)
+	case int32:
+		scalar = strconv.AppendInt(form.scalarBuffer[:0], int64(v), 10)
+	case int64:
+		scalar = strconv.AppendInt(form.scalarBuffer[:0], v, 10)
+	case uint:
+		scalar = strconv.AppendUint(form.scalarBuffer[:0], uint64(v), 10)
+	case uint8:
+		scalar = strconv.AppendUint(form.scalarBuffer[:0], uint64(v), 10)
+	case uint16:
+		scalar = strconv.AppendUint(form.scalarBuffer[:0], uint64(v), 10)
+	case uint32:
+		scalar = strconv.AppendUint(form.scalarBuffer[:0], uint64(v), 10)
+	case uint64:
+		scalar = strconv.AppendUint(form.scalarBuffer[:0], v, 10)
+	case uintptr:
+		scalar = strconv.AppendUint(form.scalarBuffer[:0], uint64(v), 10)
+	case bool:
+		scalar = strconv.AppendBool(form.scalarBuffer[:0], v)
+	}
+
+	if scalar != nil {
+		return form.addFieldBytes(fieldName, scalar)
+	}
+
 	d, errMarshal := json.Marshal(value)
 	if errMarshal != nil {
 		return errMarshal
 	}
 
 	d = bytes.Trim(d, "\"")
-	return form.addFieldPart(fieldName, bytes.NewReader(d))
+	return form.addFieldBytes(fieldName, d)
 }
 
 func addFormFieldString(form *requestForm, fieldName string, value string) error {
-	return form.addFieldPart(fieldName, strings.NewReader(value))
+	form.stringReader.Reset(value)
+	defer form.stringReader.Reset("")
+
+	return form.addFieldPart(fieldName, &form.stringReader)
 }
