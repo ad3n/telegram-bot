@@ -13,6 +13,8 @@ const (
 	HandlerTypeCallbackQueryGameShortName
 	HandlerTypePhotoCaption
 	HandlerTypeInlineQuery
+	HandlerTypeWidgetQueryData
+	HandlerTypeSharedWidgetQueryData
 )
 
 const (
@@ -108,6 +110,18 @@ func getDataFromUpdate(update *models.Update, handlerType HandlerType) (data str
 		}
 
 		data = update.InlineQuery.Query
+	case HandlerTypeWidgetQueryData:
+		if update.WidgetQuery == nil {
+			return "", nil, false
+		}
+
+		data = update.WidgetQuery.Data
+	case HandlerTypeSharedWidgetQueryData:
+		if update.SharedWidgetQuery == nil {
+			return "", nil, false
+		}
+
+		data = update.SharedWidgetQuery.Data
 	}
 
 	return data, entities, true

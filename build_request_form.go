@@ -200,6 +200,12 @@ func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 		switch vv := value.Interface().(type) {
 		case string:
 			err = addFormFieldString(form, fieldName, vv)
+		case *string:
+			if vv == nil {
+				return 0, fmt.Errorf("nil value for field %s", fieldName)
+			}
+
+			err = addFormFieldString(form, fieldName, *vv)
 		case *models.InputFileUpload:
 			err = addFormFieldInputFileUpload(form, fieldName, vv)
 		case *models.InputFileString:
