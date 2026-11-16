@@ -6,18 +6,26 @@ import (
 )
 
 var (
-	ErrorForbidden       = errors.New("forbidden")
-	ErrorBadRequest      = errors.New("bad request")
-	ErrorUnauthorized    = errors.New("unauthorized")
-	ErrorTooManyRequests = errors.New("too many requests")
-	ErrorNotFound        = errors.New("not found")
-	ErrorConflict        = errors.New("conflict")
+	ErrorForbidden               = errors.New("forbidden")
+	ErrorBadRequest              = errors.New("bad request")
+	ErrorUnauthorized            = errors.New("unauthorized")
+	ErrorTooManyRequests         = errors.New("too many requests")
+	ErrorNotFound                = errors.New("not found")
+	ErrorConflict                = errors.New("conflict")
+	ErrorWebhookReplyUnavailable = errors.New("webhook reply unavailable")
 )
 
-type TooManyRequestsError struct {
-	Message    string
-	RetryAfter int
-}
+type (
+	TooManyRequestsError struct {
+		Message    string
+		RetryAfter int
+	}
+
+	MigrateError struct {
+		Message         string
+		MigrateToChatID int
+	}
+)
 
 func (e *TooManyRequestsError) Error() string {
 	return fmt.Sprintf("%s: retry_after %d", e.Message, e.RetryAfter)
@@ -26,11 +34,6 @@ func (e *TooManyRequestsError) Error() string {
 func IsTooManyRequestsError(err error) bool {
 	_, ok := err.(*TooManyRequestsError)
 	return ok
-}
-
-type MigrateError struct {
-	Message         string
-	MigrateToChatID int
 }
 
 func (e *MigrateError) Error() string {

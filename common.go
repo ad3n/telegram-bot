@@ -147,14 +147,21 @@ func RandomString(n int) string {
 
 func ValidateWebappRequest(values url.Values, token string) (user *WebAppUser, ok bool) {
 	h := values.Get("hash")
-	values.Del("hash")
 
 	var vals []string
 
 	var u WebAppUser
 
 	for k, v := range values {
-		vv, _ := url.QueryUnescape(v[0])
+		if k == "hash" {
+			continue
+		}
+
+		if len(v) == 0 {
+			return nil, false
+		}
+
+		vv := v[0]
 		vals = append(vals, k+"="+vv)
 		if k == "user" {
 			errDecodeUser := json.Unmarshal([]byte(vv), &u)
