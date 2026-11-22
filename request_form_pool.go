@@ -2,6 +2,7 @@ package bot
 
 import (
 	"bytes"
+	"io"
 	"sync"
 )
 
@@ -11,7 +12,12 @@ const (
 )
 
 var (
-	requestFormPool = sync.Pool{New: func() any { return newRequestForm(nil) }}
+	requestFormPool = sync.Pool{New: func() any {
+		return &requestForm{
+			fileParts:  map[string]io.Reader{},
+			fieldNames: map[string]struct{}{},
+		}
+	}}
 	mediaBufferPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 )
 

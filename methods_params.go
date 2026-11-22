@@ -1,6 +1,8 @@
 package bot
 
 import (
+	"encoding/json"
+
 	"github.com/ad3n/telegram-bot/models"
 )
 
@@ -1105,6 +1107,23 @@ type AnswerInlineQueryParams struct {
 	IsPersonal    bool                             `json:"is_personal,omitempty"`
 	NextOffset    string                           `json:"next_offset,omitempty"`
 	Button        *models.InlineQueryResultsButton `json:"button,omitempty"`
+	DisableCache  bool                             `json:"-"`
+}
+
+func (p AnswerInlineQueryParams) MarshalJSON() ([]byte, error) {
+	type alias AnswerInlineQueryParams
+	data, err := json.Marshal(alias(p))
+	if err != nil || !p.DisableCache {
+		return data, err
+	}
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, err
+	}
+
+	obj["cache_time"] = json.RawMessage("0")
+	return json.Marshal(obj)
 }
 
 type AnswerWebAppQueryParams struct {

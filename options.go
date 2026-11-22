@@ -2,8 +2,6 @@ package bot
 
 import (
 	"time"
-
-	"github.com/ad3n/telegram-bot/models"
 )
 
 // Option is a function that configures a bot.
@@ -104,10 +102,9 @@ func WithAllowedUpdates(params AllowedUpdates) Option {
 	}
 }
 
-// WithUpdatesChannelCap allows setting custom capacity for the Updates channel
 func WithUpdatesChannelCap(cap int) Option {
 	return func(b *Bot) {
-		b.updates = make(chan *models.Update, cap)
+		b.updatesChanCap = cap
 	}
 }
 
@@ -132,7 +129,6 @@ func UseTestEnvironment() Option {
 	}
 }
 
-// WithNotAsyncHandlers allows to run handlers in the main goroutine
 func WithNotAsyncHandlers() Option {
 	return func(b *Bot) {
 		b.notAsyncHandlers = true

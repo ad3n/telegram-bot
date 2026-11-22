@@ -59,14 +59,6 @@ type (
 	}
 )
 
-func newRequestForm(w formWriter) *requestForm {
-	return &requestForm{
-		w:          w,
-		fileParts:  map[string]io.Reader{},
-		fieldNames: map[string]struct{}{},
-	}
-}
-
 func (f *requestForm) hasFilePart(partName string) bool {
 	_, ok := f.fileParts[partName]
 	return ok
@@ -172,9 +164,23 @@ func buildRequestForm(w *multipart.Writer, params any) (int, error) {
 
 	var fieldsCount int
 
+	inlineQuery, _ := params.(*AnswerInlineQueryParams)
+	disableCache := inlineQuery != nil && inlineQuery.DisableCache
+	if disableCache {
+		if err := addFormFieldString(form, "cache_time", "0"); err != nil {
+			return 0, err
+		}
+
+		fieldsCount++
+	}
+
 	for _, field := range loadRequestFormFields(v.Type()) {
 		value := v.Field(field.index)
 		fieldName := field.name
+		if disableCache && fieldName == "cache_time" {
+			continue
+		}
+
 		if field.omitEmpty && value.IsZero() {
 			continue
 		}

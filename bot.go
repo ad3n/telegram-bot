@@ -63,7 +63,9 @@ type (
 
 		allowedUpdates AllowedUpdates
 
-		updates chan *models.Update
+		updatesChanCap int
+		updatesMx      sync.Mutex
+		updatesRun     *updatesRun
 	}
 )
 
@@ -85,11 +87,15 @@ func New(token string, options ...Option) (*Bot, error) {
 		checkInitTimeout:   defaultCheckInitTimeout,
 		workers:            defaultWorkers,
 
-		updates: make(chan *models.Update, defaultUpdatesChanCap),
+		updatesChanCap: defaultUpdatesChanCap,
 	}
 
 	for _, o := range options {
 		o(b)
+	}
+
+	if b.updatesChanCap < 0 {
+		return nil, fmt.Errorf("updates channel capacity must be non-negative")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.checkInitTimeout)
@@ -123,28 +129,11 @@ func (b *Bot) Token() string {
 }
 
 func (b *Bot) StartWebhook(ctx context.Context) {
-	wg := sync.WaitGroup{}
-
-	wg.Add(b.workers)
-	for range b.workers {
-		go b.waitUpdates(ctx, &wg)
-	}
-
-	wg.Wait()
+	b.start(ctx, true)
 }
 
 func (b *Bot) Start(ctx context.Context) {
-	wg := sync.WaitGroup{}
-
-	wg.Add(1)
-	go b.getUpdates(ctx, &wg)
-
-	wg.Add(b.workers)
-	for range b.workers {
-		go b.waitUpdates(ctx, &wg)
-	}
-
-	wg.Wait()
+	b.start(ctx, false)
 }
 
 func defaultErrorsHandler(err error) {

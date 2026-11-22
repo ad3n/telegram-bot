@@ -24,7 +24,7 @@ func referenceEscapeMarkdown(s string, preserveEscapes bool) string {
 			continue
 		}
 
-		if strings.ContainsRune("_*[]()~`>#+-=|{}.!", r) && !escaped {
+		if !escaped && (r == '\\' || strings.ContainsRune("_*[]()~`>#+-=|{}.!", r)) {
 			result = append(result, '\\')
 		}
 

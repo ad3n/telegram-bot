@@ -16,6 +16,7 @@ import (
 
 type httpClient struct {
 	resp      string
+	reqPath   string
 	reqFields map[string]string
 	reqFiles  map[string]string // multipart file parts by name, with expected content
 	absent    []string
@@ -24,6 +25,9 @@ type httpClient struct {
 }
 
 func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
+	if c.reqPath != "" && req.URL.Path != c.reqPath {
+		return nil, fmt.Errorf("invalid request path %q, expect %q", req.URL.Path, c.reqPath)
+	}
 	if c.reqFields != nil {
 		for k, v := range c.reqFields {
 			if v != req.FormValue(k) {
@@ -1045,9 +1049,14 @@ func TestBot_Methods(t *testing.T) {
 	})
 
 	t.Run("GetMyDefaultAdministratorRights", func(t *testing.T) {
-		c := &httpClient{t: t, resp: `{"can_edit_messages":true}`, reqFields: map[string]string{
-			"for_channels": "true",
-		}}
+		c := &httpClient{
+			t:       t,
+			resp:    `{"can_edit_messages":true}`,
+			reqPath: "/bot/getMyDefaultAdministratorRights",
+			reqFields: map[string]string{
+				"for_channels": "true",
+			},
+		}
 		b := &Bot{client: c}
 		resp, err := b.GetMyDefaultAdministratorRights(context.Background(), &GetMyDefaultAdministratorRightsParams{
 			ForChannels: true,
@@ -1929,6 +1938,97 @@ func TestBot_API104(t *testing.T) {
 		assertNoErr(t, err)
 		if len(resp.Backdrops) != 1 || resp.Backdrops[0].Name != "Sunset" {
 			t.Fatalf("%+v", resp)
+		}
+	})
+}
+
+func TestAnswerInlineQuery_CacheTime(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DisableCache", func(t *testing.T) {
+		c := &httpClient{t: t, resp: `true`, reqFields: map[string]string{
+			"inline_query_id": "test-query-id",
+			"cache_time":      "0",
+		}}
+		b := &Bot{client: c}
+		params := &AnswerInlineQueryParams{
+			InlineQueryID: "test-query-id",
+			CacheTime:     0,
+			DisableCache:  true,
+		}
+		resp, err := b.AnswerInlineQuery(context.Background(), params)
+		assertNoErr(t, err)
+		assertTrue(t, resp)
+
+		data, err := json.Marshal(params)
+		assertNoErr(t, err)
+		if !strings.Contains(string(data), `"cache_time":0`) {
+			t.Errorf("json %s, expect cache_time 0", data)
+		}
+	})
+
+	t.Run("CacheTime", func(t *testing.T) {
+		c := &httpClient{t: t, resp: `true`, reqFields: map[string]string{
+			"inline_query_id": "test-query-id",
+			"cache_time":      "30",
+		}}
+		b := &Bot{client: c}
+		params := &AnswerInlineQueryParams{
+			InlineQueryID: "test-query-id",
+			CacheTime:     30,
+		}
+		resp, err := b.AnswerInlineQuery(context.Background(), params)
+		assertNoErr(t, err)
+		assertTrue(t, resp)
+
+		data, err := json.Marshal(params)
+		assertNoErr(t, err)
+		if !strings.Contains(string(data), `"cache_time":30`) {
+			t.Errorf("json %s, expect cache_time 30", data)
+		}
+	})
+
+	t.Run("ZeroOmitted", func(t *testing.T) {
+		c := &httpClient{t: t, resp: `true`, reqFields: map[string]string{
+			"inline_query_id": "test-query-id",
+		}, absent: []string{"cache_time"}}
+		b := &Bot{client: c}
+		params := &AnswerInlineQueryParams{
+			InlineQueryID: "test-query-id",
+			CacheTime:     0,
+		}
+		resp, err := b.AnswerInlineQuery(context.Background(), params)
+		assertNoErr(t, err)
+		assertTrue(t, resp)
+
+		data, err := json.Marshal(params)
+		assertNoErr(t, err)
+		if strings.Contains(string(data), `"cache_time"`) {
+			t.Errorf("json %s, cache_time must be absent", data)
+		}
+	})
+
+	t.Run("DisableCacheOverridesCacheTime", func(t *testing.T) {
+		c := &httpClient{t: t, resp: `true`, reqFields: map[string]string{
+			"inline_query_id": "test-query-id",
+			"cache_time":      "0",
+			"is_personal":     "true",
+		}}
+		b := &Bot{client: c}
+		params := &AnswerInlineQueryParams{
+			InlineQueryID: "test-query-id",
+			CacheTime:     30,
+			IsPersonal:    true,
+			DisableCache:  true,
+		}
+		resp, err := b.AnswerInlineQuery(context.Background(), params)
+		assertNoErr(t, err)
+		assertTrue(t, resp)
+
+		data, err := json.Marshal(params)
+		assertNoErr(t, err)
+		if !strings.Contains(string(data), `"cache_time":0`) || strings.Contains(string(data), `"cache_time":30`) {
+			t.Errorf("json %s, expect cache_time 0", data)
 		}
 	})
 }

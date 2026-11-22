@@ -113,7 +113,7 @@ func escapeMarkdown(s string, preserveEscapes bool) string {
 
 func markdownNeedsEscape(r rune) bool {
 	switch r {
-	case '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!':
+	case '\\', '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!':
 		return true
 	}
 

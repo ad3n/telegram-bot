@@ -21,6 +21,12 @@ type retainedRequest struct {
 	body []byte
 }
 
+func newRequestForm(w formWriter) *requestForm {
+	form := requestFormPool.New().(*requestForm)
+	form.w = w
+	return form
+}
+
 func TestRequestFormReset(t *testing.T) {
 	for _, count := range []int{0, maxPooledFormParts, maxPooledFormParts + 1} {
 		form := newRequestForm(multipart.NewWriter(io.Discard))

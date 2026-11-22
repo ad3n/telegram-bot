@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -15,6 +14,12 @@ const (
 	maxTimeoutAfterError = time.Second * 5
 )
 
+const (
+	claimPending int32 = iota
+	claimTaken
+	claimAbandoned
+)
+
 var (
 	errMissingUpdateID = errors.New("missing update_id")
 )
@@ -22,17 +27,24 @@ var (
 type (
 	getUpdatesParams struct {
 		Offset         int64          `json:"offset,omitempty"`
-		Limit          int            `json:"limit,omitempty"`
 		Timeout        int            `json:"timeout,omitempty"`
 		AllowedUpdates AllowedUpdates `json:"allowed_updates,omitempty"`
 	}
 
 	AllowedUpdates []string
+
+	batchUpdate struct {
+		claim pollClaim
+		id    int64
+	}
+
+	pollClaim struct {
+		dispatched chan struct{}
+		state      int32
+	}
 )
 
-func (b *Bot) getUpdates(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func (b *Bot) getUpdates(ctx context.Context, queue chan<- queuedUpdate) {
 	var timeoutAfterError time.Duration
 
 	for {
@@ -55,12 +67,9 @@ func (b *Bot) getUpdates(ctx context.Context, wg *sync.WaitGroup) {
 		}
 
 		params := &getUpdatesParams{
-			Timeout: int((b.pollTimeout - time.Second).Seconds()),
-			Offset:  atomic.LoadInt64(&b.lastUpdateID) + 1,
-		}
-
-		if b.allowedUpdates != nil {
-			params.AllowedUpdates = b.allowedUpdates
+			Timeout:        int((b.pollTimeout - time.Second).Seconds()),
+			Offset:         atomic.LoadInt64(&b.lastUpdateID) + 1,
+			AllowedUpdates: b.allowedUpdates,
 		}
 
 		var updates []json.RawMessage
@@ -85,6 +94,8 @@ func (b *Bot) getUpdates(ctx context.Context, wg *sync.WaitGroup) {
 		}
 
 		offsetStuck := false
+		batch := make([]batchUpdate, len(updates))
+		batchLen := 0
 
 		for _, raw := range updates {
 			upd, errDecode := decodeUpdate(raw)
@@ -99,19 +110,31 @@ func (b *Bot) getUpdates(ctx context.Context, wg *sync.WaitGroup) {
 			}
 
 			offsetStuck = false
-			atomic.StoreInt64(&b.lastUpdateID, upd.ID)
+			if params.Offset < 0 && batchLen == 0 {
+				atomic.StoreInt64(&b.lastUpdateID, upd.ID-1)
+			}
+
+			entry := &batch[batchLen]
+			entry.id = upd.ID
 
 			if errDecode != nil {
 				b.error("error decode update %d, skipped, %s, %w", upd.ID, raw, errDecode)
+				batchLen++
 				continue
 			}
 
+			entry.claim.dispatched = make(chan struct{})
 			select {
 			case <-ctx.Done():
-				b.error("some updates lost, ctx done")
+				b.confirmDispatched(ctx, batch[:batchLen])
 				return
-			case b.updates <- upd:
+			case queue <- queuedUpdate{update: upd, claim: &entry.claim}:
+				batchLen++
 			}
+		}
+
+		if !b.confirmDispatched(ctx, batch[:batchLen]) {
+			return
 		}
 
 		if offsetStuck {
@@ -135,7 +158,8 @@ func decodeUpdate(raw json.RawMessage) (*models.Update, error) {
 	}{}
 	_ = json.Unmarshal(raw, &head)
 
-	return &models.Update{ID: head.ID}, errDecode
+	*upd = models.Update{ID: head.ID}
+	return upd, errDecode
 }
 
 func incErrTimeout(timeout time.Duration) time.Duration {
@@ -149,4 +173,43 @@ func incErrTimeout(timeout time.Duration) time.Duration {
 	}
 
 	return timeout
+}
+
+func (c *pollClaim) take() bool {
+	if !atomic.CompareAndSwapInt32(&c.state, claimPending, claimTaken) {
+		return false
+	}
+
+	close(c.dispatched)
+	return true
+}
+
+func (c *pollClaim) abandon() bool {
+	return atomic.CompareAndSwapInt32(&c.state, claimPending, claimAbandoned)
+}
+
+func (b *Bot) confirmDispatched(ctx context.Context, batch []batchUpdate) bool {
+	settled := 0
+	for settled < len(batch) && batch[settled].wait(ctx) {
+		settled++
+	}
+
+	if settled > 0 {
+		atomic.StoreInt64(&b.lastUpdateID, batch[settled-1].id)
+	}
+
+	return settled == len(batch)
+}
+
+func (u *batchUpdate) wait(ctx context.Context) bool {
+	if u.claim.dispatched == nil {
+		return true
+	}
+
+	select {
+	case <-u.claim.dispatched:
+		return true
+	case <-ctx.Done():
+		return !u.claim.abandon()
+	}
 }
